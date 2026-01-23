@@ -239,7 +239,7 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
-
+  dq_kvm_mappings_copy(p->pagetable, p->kernel_pagetable_copy, 0, p->sz);
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
   p->trapframe->sp = PGSIZE;  // user stack pointer
@@ -262,11 +262,18 @@ growproc(int n)
 
   sz = p->sz;
   if(n > 0){
-    if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
+    uint64 newsz;
+    if((newsz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
+    if (dq_kvm_mappings_copy(p->pagetable, p->kernel_pagetable_copy, sz, n) != 0) {          
+      uvmdealloc(p->pagetable, newsz, sz);          
+      return -1;
+            }      
+      sz = newsz;
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
+    sz = dq_kvm_dealloc(p->kernel_pagetable_copy, sz, sz + n);
   }
   p->sz = sz;
   return 0;
@@ -287,7 +294,7 @@ fork(void)
   }
 
   // Copy user memory from parent to child.
-  if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
+  if((uvmcopy(p->pagetable, np->pagetable, p->sz) < 0) || (dq_kvm_mappings_copy(np->pagetable, np->kernel_pagetable_copy, 0, p->sz) < 0)){
     freeproc(np);
     release(&np->lock);
     return -1;
