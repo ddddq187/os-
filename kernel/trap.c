@@ -218,3 +218,16 @@ devintr()
   }
 }
 
+int dq_sigalarm(int ticks, void(*handler)()){
+  struct proc* p= myproc();
+  p->dq_alarm_handler=handler;
+  p->dq_alarm_ticks=ticks;
+  p->dq_alarm_interval=ticks;
+  return 0;
+}
+int dq_sigreturn() {    
+  struct proc* p = myproc();    
+  *p->trapframe = *p->dq_alarm_trapframe;    
+  p->dq_alarm_goingoff = 0;    
+  return 0;
+  }

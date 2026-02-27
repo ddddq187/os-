@@ -106,12 +106,19 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
-
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
     return 0;
   }
+  if((p->dq_alarm_trapframe = (struct trapframe *)kalloc()) == 0){
+    release(&p->lock);
+    return 0;
+  }
+  p->dq_alarm_interval=0;
+  p->dq_alarm_handler=0;
+  p->dq_alarm_ticks=0;
+  p->dq_alarm_goingoff=0;
 
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
@@ -141,6 +148,10 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  if(p->dq_alarm_trapframe)
+    kfree((void*)p->dq_alarm_trapframe);
+  p->dq_alarm_trapframe = 0;
+
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -149,6 +160,10 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->dq_alarm_interval=0;
+  p->dq_alarm_handler=0;
+  p->dq_alarm_ticks=0;
+  p->dq_alarm_goingoff=0;
   p->state = UNUSED;
 }
 
@@ -696,4 +711,17 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+void usertrap(void){
+  if (which_dev == 2) {
+    if (p->dq_alarm_interval != 0 && --p->dq_alarm_ticks <= 0 && dq_alarm_goingoff ==0) {
+      p->dq_alarm_ticks = p->dq_alarm_interval;
+      *p->dq_alarm_trapframe = *p->trapframe;
+      p->trapframe->epc = (uint64)p->dq_alarm_handler;
+      p->dq_alarm_goingoff =1;
+    }
+    yield();
+  }
+  usertrapret();
 }
